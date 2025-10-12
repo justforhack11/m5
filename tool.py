@@ -590,7 +590,6 @@ class MalwareAnalyzer:
             self.results['memory'].append("-"*80)
             
             total_size = 0
-            all_strings = set()
             
             for mmap in memory_maps:
                 # Parse address range
@@ -613,85 +612,46 @@ class MalwareAnalyzer:
             self.results['memory'].append(f"Total memory regions: {len(memory_maps)}")
             self.results['memory'].append(f"Total memory size: {total_size:.2f} KB ({total_size/1024:.2f} MB)")
             
-            # Try to read memory and extract strings (Linux-specific)
-            if sys.platform.startswith('linux'):
-                print(f"\n[MEMORY] Extracting readable strings from memory...")
-                self.results['memory'].append("")
-                self.results['memory'].append("Readable Strings Found in Memory:")
-                self.results['memory'].append("="*80)
+            # Extract strings from malware file
+            print(f"\n[MEMORY] Extracting readable strings from malware file...")
+            self.results['memory'].append("")
+            self.results['memory'].append("Readable Strings Found in Malware File:")
+            self.results['memory'].append("="*80)
+            
+            all_strings = set()
+            
+            try:
+                with open(self.malware_path, 'rb') as f:
+                    data = f.read()
+                    all_strings = set(self.extract_strings(data))
                 
-                try:
-                    mem_file = f"/proc/{self.malware_pid}/mem"
-                    maps_file = f"/proc/{self.malware_pid}/maps"
+                # Display unique strings
+                if all_strings:
+                    print(f"[MEMORY] Found {len(all_strings)} unique strings")
+                    print(f"[MEMORY] Sample strings (first 50):")
                     
-                    with open(maps_file, 'r') as maps:
-                        for line in maps:
-                            parts = line.split()
-                            if len(parts) < 2:
-                                continue
-                            
-                            addr_range = parts[0]
-                            perms = parts[1]
-                            
-                            # Only read readable regions
-                            if 'r' not in perms:
-                                continue
-                            
-                            try:
-                                start, end = addr_range.split('-')
-                                start_addr = int(start, 16)
-                                end_addr = int(end, 16)
-                                size = end_addr - start_addr
-                                
-                                # Skip very large regions
-                                if size > 10 * 1024 * 1024:  # Skip regions > 10MB
-                                    continue
-                                
-                                with open(mem_file, 'rb') as mem:
-                                    mem.seek(start_addr)
-                                    data = mem.read(size)
-                                    
-                                    # Extract strings
-                                    strings = self.extract_strings(data)
-                                    all_strings.update(strings)
-                            except (OSError, ValueError):
-                                continue
+                    for i, string in enumerate(sorted(all_strings)[:50]):
+                        if len(string) > 100:
+                            string = string[:97] + "..."
+                        print(f"  {i+1}. {string}")
+                        self.results['memory'].append(f"{i+1}. {string}")
                     
-                    # Display unique strings
-                    if all_strings:
-                        print(f"[MEMORY] Found {len(all_strings)} unique strings")
-                        print(f"[MEMORY] Sample strings (first 50):")
-                        
-                        for i, string in enumerate(sorted(all_strings)[:50]):
-                            if len(string) > 100:
-                                string = string[:97] + "..."
-                            print(f"  {i+1}. {string}")
-                            self.results['memory'].append(f"{i+1}. {string}")
-                        
-                        # Save all strings
+                    # Save all strings
+                    self.results['memory'].append("")
+                    self.results['memory'].append(f"Total unique strings found: {len(all_strings)}")
+                    
+                    if len(all_strings) > 50:
                         self.results['memory'].append("")
-                        self.results['memory'].append(f"Total unique strings found: {len(all_strings)}")
-                        
-                        if len(all_strings) > 50:
-                            self.results['memory'].append("")
-                            self.results['memory'].append("All strings:")
-                            self.results['memory'].append("-"*80)
-                            for i, string in enumerate(sorted(all_strings)):
-                                self.results['memory'].append(f"{i+1}. {string}")
-                    else:
-                        print(f"[MEMORY] No readable strings found")
-                        self.results['memory'].append("No readable strings found")
-                        
-                except PermissionError:
-                    msg = "Permission denied to read process memory. Try running with sudo."
-                    print(f"[MEMORY] {msg}")
-                    self.results['memory'].append(msg)
-                except Exception as e:
-                    msg = f"Error reading memory: {e}"
-                    print(f"[MEMORY] {msg}")
-                    self.results['memory'].append(msg)
-            else:
-                msg = "Memory string extraction is only supported on Linux"
+                        self.results['memory'].append("All strings:")
+                        self.results['memory'].append("-"*80)
+                        for i, string in enumerate(sorted(all_strings)):
+                            self.results['memory'].append(f"{i+1}. {string}")
+                else:
+                    print(f"[MEMORY] No readable strings found")
+                    self.results['memory'].append("No readable strings found")
+                    
+            except Exception as e:
+                msg = f"Error extracting strings from file: {e}"
                 print(f"[MEMORY] {msg}")
                 self.results['memory'].append(msg)
                 
